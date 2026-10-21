@@ -1,8 +1,8 @@
 
 PlatformIO project	         Complete
-Arduino Mega setup	        Complete
-Sweeping ultrasonic sonar	In development
-Python visualization	    Planned
+Arduino uno setup	        Complete
+Sweeping ultrasonic sonar	Complete
+Python visualization	    Complete
 Differential-drive system	Planned
 Wheel encoders	            Planned
 Odometry	                Planned

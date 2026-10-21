@@ -1,82 +1,96 @@
 import math
-import random
-import time
-
+import serial
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 # ============================================================
 # Configuration
 # ============================================================
 
-MAX_DISTANCE_CM = 400.0
-
-# Angular field of view.
-# 0° = straight ahead
-# -90° = left
-# +90° = right
-MIN_ANGLE_DEG = -90
-MAX_ANGLE_DEG = 90
-
-# Set to True while developing without the Arduino.
-SIMULATION_MODE = True
-
-# Serial settings used later.
 SERIAL_PORT = "COM3"
 BAUD_RATE = 115200
 
+MAX_DISTANCE_CM = 400.0
+
+MIN_ANGLE_DEG = -90
+MAX_ANGLE_DEG = 90
+
 
 # ============================================================
-# Simulation
+# Serial communication
 # ============================================================
 
-def simulate_scan():
+def open_serial():
     """
-    Generate simulated HC-SR04 scan data.
+    Open the Arduino serial connection.
+    """
+
+    print(f"Opening serial port {SERIAL_PORT}...")
+
+    connection = serial.Serial(
+        SERIAL_PORT,
+        BAUD_RATE,
+        timeout=1
+    )
+
+    print("Serial connection established.")
+
+    return connection
+
+
+def parse_scan_line(line):
+    """
+    Parse an Arduino SCAN message.
+
+    Expected format:
+
+        SCAN,<angle>,<distance>,<timestamp>
+
+    Example:
+
+        SCAN,0,37.42,1023
 
     Returns:
-        list of (angle_deg, distance_cm, timestamp_ms)
+
+        (angle, distance, timestamp)
+
+    or None if the line is invalid.
     """
 
-    scan = []
+    line = line.strip()
 
-    timestamp = int(time.time() * 1000)
+    if not line.startswith("SCAN,"):
+        return None
 
-    for angle in range(MIN_ANGLE_DEG, MAX_ANGLE_DEG + 1, 3):
+    fields = line.split(",")
 
-        # Default distance: far away.
-        distance = 300.0
+    if len(fields) != 4:
+        return None
 
-        # Simulated obstacle directly ahead.
-        if -10 <= angle <= 10:
-            distance = 80.0 + random.uniform(-3, 3)
+    try:
+        angle = int(fields[1])
 
-        # Simulated obstacle on the left.
-        elif -55 <= angle <= -40:
-            distance = 140.0 + random.uniform(-5, 5)
+        if fields[2] == "ERROR":
+            return None
 
-        # Simulated obstacle on the right.
-        elif 40 <= angle <= 55:
-            distance = 190.0 + random.uniform(-5, 5)
+        distance = float(fields[2])
+        timestamp = int(fields[3])
 
-        # Add small measurement noise.
-        distance += random.uniform(-1.5, 1.5)
+    except ValueError:
+        return None
 
-        scan.append(
-            (angle, distance, timestamp)
-        )
-
-    return scan
+    return angle, distance, timestamp
 
 
 # ============================================================
 # Visualization
 # ============================================================
 
+
 class RadarVisualizer:
 
     def __init__(self):
+
         self.fig = plt.figure(figsize=(9, 5))
 
         self.ax = self.fig.add_subplot(
@@ -84,27 +98,93 @@ class RadarVisualizer:
             projection="polar"
         )
 
-        # Put 0° at the top.
+        # ----------------------------------------------------
+        # Radar orientation
+        # ----------------------------------------------------
+
+        # 0° is straight ahead.
         self.ax.set_theta_zero_location("N")
 
-        # Positive angles go clockwise.
+        # Positive angles increase clockwise.
         self.ax.set_theta_direction(-1)
 
-        # Only display the front 180°.
+        # Display only the forward 180°.
         self.ax.set_thetamin(MIN_ANGLE_DEG)
         self.ax.set_thetamax(MAX_ANGLE_DEG)
 
-        # Distance range.
+        # ----------------------------------------------------
+        # Distance range
+        # ----------------------------------------------------
+
         self.ax.set_rlim(
             0,
             MAX_DISTANCE_CM
         )
 
-        self.ax.set_title(
-            "Autonomous Rover — HC-SR04 Scan"
+        # Distance rings every 1 metre.
+        distance_ticks = [
+            100,
+            200,
+            300,
+            400
+        ]
+
+        self.ax.set_rticks(distance_ticks)
+
+        # Hide Matplotlib's automatic radial labels.
+        self.ax.set_yticklabels([])
+
+        # ----------------------------------------------------
+        # Distance labels
+        # ----------------------------------------------------
+
+        # Place our own labels along the 0° direction.
+        #
+        # Because 0° points North in the radar coordinate
+        # system, these are positioned slightly to the
+        # right of the centre using a small angular offset.
+
+        label_angle = math.radians(88)
+
+        for distance in distance_ticks:
+
+            self.ax.text(
+                label_angle,
+                distance,
+                f"{distance / 100:.0f} m",
+                ha="left",
+                va="center",
+                fontsize=9
+            )
+
+        # ----------------------------------------------------
+        # Angle labels
+        # ----------------------------------------------------
+
+        self.ax.set_thetagrids(
+            [-90, -45, 0, 45, 90],
+            labels=[
+                "-90°",
+                "-45°",
+                "0°",
+                "45°",
+                "90°"
+            ]
         )
 
-        # Measurement points.
+        # ----------------------------------------------------
+        # Title
+        # ----------------------------------------------------
+
+        self.ax.set_title(
+            "Autonomous Rover — HC-SR04 Scan",
+            pad=20
+        )
+
+        # ----------------------------------------------------
+        # Scan points
+        # ----------------------------------------------------
+
         self.points, = self.ax.plot(
             [],
             [],
@@ -113,16 +193,13 @@ class RadarVisualizer:
 
     def update(self, scan):
         """
-        Update the radar with a list of ScanPoint-like tuples.
+        Update the radar with a collection of measurements.
         """
 
         angles = []
         distances = []
 
         for angle_deg, distance_cm, timestamp_ms in scan:
-
-            if distance_cm < 0:
-                continue
 
             if not (
                 MIN_ANGLE_DEG
@@ -131,13 +208,19 @@ class RadarVisualizer:
             ):
                 continue
 
+            if distance_cm < 0:
+                continue
+
             if distance_cm > MAX_DISTANCE_CM:
                 continue
 
-            angle_rad = math.radians(angle_deg)
+            angles.append(
+                math.radians(angle_deg)
+            )
 
-            angles.append(angle_rad)
-            distances.append(distance_cm)
+            distances.append(
+                distance_cm
+            )
 
         self.points.set_data(
             angles,
@@ -145,39 +228,82 @@ class RadarVisualizer:
         )
 
         self.fig.canvas.draw_idle()
-        self.fig.canvas.flush_events()
 
-    def show(self):
-        plt.show()
+    def is_open(self):
+        return plt.fignum_exists(
+            self.fig.number
+        )
+
 
 
 # ============================================================
-# Main
+# Main application
 # ============================================================
-
 def main():
+
+    print("Autonomous Rover HC-SR04 Visualizer")
+    print("------------------------------------")
+
+    try:
+        serial_connection = open_serial()
+
+    except serial.SerialException as error:
+
+        print()
+        print("ERROR: Could not open the serial port.")
+        print(error)
+        print()
+        print("Check:")
+        print("  - Arduino is connected")
+        print("  - SERIAL_PORT is correct")
+        print("  - PlatformIO Serial Monitor is closed")
+
+        return
 
     visualizer = RadarVisualizer()
 
-    if SIMULATION_MODE:
+    # Explicitly display the window before entering
+    # the serial-reading loop.
+    plt.show(block=False)
 
-        print("Running in simulation mode.")
+    scan = []
 
-        while plt.fignum_exists(
-            visualizer.fig.number
-        ):
+    try:
 
-            scan = simulate_scan()
+        while visualizer.is_open():
+
+            line = (
+                serial_connection
+                .readline()
+                .decode(
+                    "utf-8",
+                    errors="ignore"
+                )
+            )
+
+            measurement = parse_scan_line(line)
+
+            if measurement is None:
+                plt.pause(0.01)
+                continue
+
+            scan.append(measurement)
 
             visualizer.update(scan)
 
-            plt.pause(0.5)
+            plt.pause(0.001)
 
-    else:
+    except KeyboardInterrupt:
 
-        print("Serial mode not implemented yet.")
+        print("\nVisualizer stopped.")
 
-    visualizer.show()
+    finally:
+
+        serial_connection.close()
+
+        print("Serial connection closed.")
+
+        plt.close()
 
 
 if __name__ == "__main__":

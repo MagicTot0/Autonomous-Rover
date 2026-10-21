@@ -1,0 +1,53 @@
+Responsibilities
+
+include/ScanPoint.h
+
+Defines the common measurement structure used by the rover.
+
+struct ScanPoint
+{
+    uint16_t angle_deg;
+    float distance_cm;
+    uint32_t timestamp_ms;
+};
+
+The structure is deliberately independent from the HC-SR04.
+The sensor produces distance information, while the future scanning subsystem will provide the corresponding angle.
+
+lib/HCSR04/HCSR04.h
+
+Defines the public interface of the HC-SR04 driver.
+
+The driver exposes:
+float measureDistanceCm();
+for a raw distance measurement, and:
+ScanPoint measure(uint16_t angleDeg);
+for a rover-level measurement.
+
+lib/HCSR04/HCSR04.cpp
+
+Contains the hardware implementation:
+
+Configure trigger and echo pins.
+Generate the HC-SR04 trigger pulse.
+Measure the returned echo pulse.
+Convert pulse duration to distance.
+Reject invalid measurements.
+Create a ScanPoint.
+
+The driver does not control the servo and does not perform mapping or navigation.
+
+HC-SR04 measurement
+
+The HC-SR04 is triggered with a HIGH pulse of approximately 10 µs.
+The sensor then generates an ECHO pulse whose duration represents the time taken for the ultrasonic signal to travel:
+Sensor → object → sensor
+Therefore the measured travel time is divided by two.
+The current implementation uses approximately:
+speed of sound = 0.0343 cm/µs
+and calculates:
+distance = echo_time × 0.0343 / 2
+The current useful measurement range is limited to:
+2 cm ≤ distance ≤ 400 cm
+
+Measurements outside this range, or measurements for which no echo is received within the timeout, are reported as invalid.

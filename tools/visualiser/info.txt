@@ -1,0 +1,75 @@
+Serial data format
+
+The Arduino currently outputs measurements using:
+
+SCAN,<angle>,<distance>,<timestamp>
+
+Example:
+
+SCAN,0,37.42,1023
+
+which represents:
+
+Angle:      0°
+Distance:   37.42 cm
+Timestamp:  1023 ms
+
+Invalid measurements are represented as:
+
+SCAN,0,ERROR,1234
+
+This simple comma-separated format is intentional.
+It allows the Python development tools to consume the sensor data without coupling them to the internal C++ implementation.
+It can later be replaced or extended by the rover's more formal communication protocol.
+
+
+
+Angular coordinate system
+
+The rover will use a front-facing 180° field of view.
+
+The intended coordinate system is:
+
+                  0°
+                  │
+                  │
+                  │
+        -90° ──── Rover ──── +90°
+         LEFT                  RIGHT
+
+Therefore:
+
+-90° = extreme left
+  0° = straight ahead
++90° = extreme right
+
+The exact mechanical limits of the SG90 will be determined during integration.
+The software coordinate system does not necessarily need to correspond directly to the servo's internal 0–180° position.
+For example, a future implementation could map:
+Servo 10°  → rover -80°
+Servo 90°  → rover   0°
+Servo 170° → rover +80°
+This allows mechanical safety margins to be maintained.
+
+Python visualization
+
+The Python visualization is located at:
+
+tools/visualizer/visualizer.py
+
+Its purpose is development and debugging rather than navigation.
+
+The intended data flow is:
+
+HC-SR04
+    ↓
+Arduino
+    ↓
+Serial
+    ↓
+Python
+    ↓
+Radar visualization
+
+The visualization displays measurements in polar coordinates so that the position of detected objects corresponds naturally to their angular position relative to the rover.
+
